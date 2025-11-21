@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Conexión API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        input {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Test de Conexión con Backend API</h1>
+        
+        <div class="test-section">
+            <h3>1. Test de Conexión Básica</h3>
+            <button onclick="testConnection()">Probar Conexión</button>
+            <div id="connectionResult" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>2. Test de Login</h3>
+            <input type="text" id="username" placeholder="Username" value="">
+            <input type="password" id="password" placeholder="Password" value="">
+            <button onclick="testLogin()">Probar Login</button>
+            <div id="loginResult" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>3. Test de Endpoints (requiere token)</h3>
+            <input type="text" id="token" placeholder="Token (se llena automáticamente)" style="width: 400px;">
+            <br><br>
+            <button onclick="testEmpleados()">GET Empleados</button>
+            <button onclick="testCasos()">GET Casos</button>
+            <button onclick="testRoles()">GET Roles</button>
+            <div id="endpointsResult" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8000/api/';
+
+        function showResult(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            element.className = 'result ' + (isError ? 'error' : 'success');
+            element.textContent = JSON.stringify(data, null, 2);
+        }
+
+        async function testConnection() {
+            try {
+                const response = await fetch(API_BASE_URL);
+                const data = await response.json();
+                showResult('connectionResult', {
+                    status: response.status,
+                    message: 'Conexión exitosa!',
+                    data: data
+                });
+            } catch (error) {
+                showResult('connectionResult', {
+                    error: error.message,
+                    message: 'Error de conexión. Verifica que el servidor esté corriendo en http://localhost:8000'
+                }, true);
+            }
+        }
+
+        async function testLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                showResult('loginResult', {
+                    error: 'Por favor ingresa username y password'
+                }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(API_BASE_URL + 'auth/login/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Guardar token
+                    document.getElementById('token').value = data.token;
+                    localStorage.setItem('token', data.token);
+                    showResult('loginResult', {
+                        status: response.status,
+                        message: 'Login exitoso!',
+                        token: data.token.substring(0, 20) + '...',
+                        user: data.user
+                    });
+                } else {
+                    showResult('loginResult', data, true);
+                }
+            } catch (error) {
+                showResult('loginResult', {
+                    error: error.message,
+                    message: 'Error al hacer login'
+                }, true);
+            }
+        }
+
+        async function testEmpleados() {
+            const token = document.getElementById('token').value || localStorage.getItem('token');
+            
+            if (!token) {
+                showResult('endpointsResult', {
+                    error: 'Necesitas hacer login primero para obtener un token'
+                }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(API_BASE_URL + 'empleados/', {
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                showResult('endpointsResult', {
+                    status: response.status,
+                    endpoint: 'GET /api/empleados/',
+                    count: Array.isArray(data) ? data.length : 'N/A',
+                    data: data
+                });
+            } catch (error) {
+                showResult('endpointsResult', {
+                    error: error.message
+                }, true);
+            }
+        }
+
+        async function testCasos() {
+            const token = document.getElementById('token').value || localStorage.getItem('token');
+            
+            if (!token) {
+                showResult('endpointsResult', {
+                    error: 'Necesitas hacer login primero'
+                }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(API_BASE_URL + 'casos/', {
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                showResult('endpointsResult', {
+                    status: response.status,
+                    endpoint: 'GET /api/casos/',
+                    count: Array.isArray(data) ? data.length : 'N/A',
+                    data: data
+                });
+            } catch (error) {
+                showResult('endpointsResult', {
+                    error: error.message
+                }, true);
+            }
+        }
+
+        async function testRoles() {
+            const token = document.getElementById('token').value || localStorage.getItem('token');
+            
+            if (!token) {
+                showResult('endpointsResult', {
+                    error: 'Necesitas hacer login primero'
+                }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(API_BASE_URL + 'roles/', {
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                showResult('endpointsResult', {
+                    status: response.status,
+                    endpoint: 'GET /api/roles/',
+                    count: Array.isArray(data) ? data.length : 'N/A',
+                    data: data
+                });
+            } catch (error) {
+                showResult('endpointsResult', {
+                    error: error.message
+                }, true);
+            }
+        }
+
+        // Cargar token si existe
+        window.onload = function() {
+            const savedToken = localStorage.getItem('token');
+            if (savedToken) {
+                document.getElementById('token').value = savedToken;
+            }
+        };
+    </script>
+</body>
+</html>
+
+
+
+
