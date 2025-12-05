@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import (
-    Rol, User, Empleado, Caso, Alerta, Documento, 
+    Rol, User, Empleado, Caso, Alerta, Documento, Carpeta,
     Seguimiento, Reporte, CasoReporte, TokenVerification, ExpiringToken
 )
 
@@ -14,25 +14,36 @@ class RolAdmin(admin.ModelAdmin):
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ['username', 'nombre', 'correo', 'rol', 'estado', 'date_joined']
-    list_filter = ['rol', 'estado', 'is_staff', 'is_active']
+    list_display = ['username', 'nombre', 'correo', 'rol', 'puesto', 'area', 'estado', 'date_joined']
+    list_filter = ['rol', 'estado', 'is_staff', 'is_active', 'area', 'division', 'ciudad']
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Información adicional', {'fields': ('nombre', 'rol', 'correo', 'estado')}),
+        ('Información laboral', {
+            'fields': ('puesto', 'area', 'division', 'fecha_ingreso', 'experiencia', 'ciudad'),
+            'classes': ('collapse',)
+        }),
     )
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
         ('Información adicional', {'fields': ('nombre', 'rol', 'correo', 'estado')}),
+        ('Información laboral', {
+            'fields': ('puesto', 'area', 'division', 'fecha_ingreso', 'experiencia', 'ciudad'),
+            'classes': ('collapse',)
+        }),
     )
-    search_fields = ['username', 'nombre', 'correo']
+    search_fields = ['username', 'nombre', 'correo', 'puesto', 'area', 'division', 'ciudad']
 
 
 @admin.register(Empleado)
 class EmpleadoAdmin(admin.ModelAdmin):
-    list_display = ['nombre', 'apellido', 'cargo', 'area', 'estado', 'fecha_ingreso']
-    list_filter = ['estado', 'area', 'division', 'fecha_ingreso']
-    search_fields = ['nombre', 'apellido', 'correo', 'cargo']
+    list_display = ['nombre', 'apellido', 'tipo_documento', 'numero_documento', 'ciudad', 'cargo', 'area', 'estado', 'fecha_ingreso']
+    list_filter = ['estado', 'area', 'division', 'tipo_documento', 'ciudad', 'fecha_ingreso']
+    search_fields = ['nombre', 'apellido', 'correo', 'cargo', 'numero_documento', 'ciudad']
     fieldsets = (
         ('Información Personal', {
             'fields': ('nombre', 'apellido', 'fecha_nacimiento', 'foto')
+        }),
+        ('Documentación', {
+            'fields': ('tipo_documento', 'numero_documento', 'ciudad')
         }),
         ('Información Laboral', {
             'fields': ('cargo', 'division', 'area', 'supervisor', 'fecha_ingreso', 'estado')
@@ -46,8 +57,8 @@ class EmpleadoAdmin(admin.ModelAdmin):
 @admin.register(Caso)
 class CasoAdmin(admin.ModelAdmin):
     list_display = ['id_caso', 'empleado', 'tipo_fuero', 'estado', 'fecha_inicio', 'responsable', 'fecha_cierre']
-    list_filter = ['estado', 'tipo_fuero', 'fecha_inicio', 'fecha_cierre']
-    search_fields = ['empleado__nombre', 'empleado__apellido', 'diagnostico', 'observaciones']
+    list_filter = ['estado', 'tipo_fuero', 'fecha_inicio', 'fecha_cierre', 'responsable']
+    search_fields = ['empleado__nombre', 'empleado__apellido', 'diagnostico', 'observaciones', 'responsable__nombre', 'responsable__username']
     readonly_fields = ['fecha_inicio']
     fieldsets = (
         ('Información General', {
@@ -70,11 +81,19 @@ class AlertaAdmin(admin.ModelAdmin):
     readonly_fields = ['fecha_generada']
 
 
+@admin.register(Carpeta)
+class CarpetaAdmin(admin.ModelAdmin):
+    list_display = ['nombre', 'empleado', 'fecha_creacion']
+    list_filter = ['fecha_creacion', 'empleado']
+    search_fields = ['nombre', 'empleado__nombre', 'empleado__apellido']
+    readonly_fields = ['fecha_creacion']
+
+
 @admin.register(Documento)
 class DocumentoAdmin(admin.ModelAdmin):
-    list_display = ['nombre', 'caso', 'tipo', 'usuario_creador', 'fecha_carga', 'extension']
-    list_filter = ['tipo', 'fecha_carga', 'extension']
-    search_fields = ['nombre', 'descripcion', 'caso__empleado__nombre']
+    list_display = ['nombre', 'caso', 'tipo', 'usuario_creador', 'empleado', 'carpeta', 'fecha_carga', 'extension']
+    list_filter = ['tipo', 'fecha_carga', 'extension', 'carpeta']
+    search_fields = ['nombre', 'descripcion', 'caso__empleado__nombre', 'usuario_creador__nombre', 'empleado__nombre']
     readonly_fields = ['fecha_carga', 'fecha_modificacion']
 
 

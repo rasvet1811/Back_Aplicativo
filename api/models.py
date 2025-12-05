@@ -30,6 +30,14 @@ class User(AbstractUser):
     correo = models.EmailField(unique=True, max_length=150, db_column='Correo')
     estado = models.CharField(max_length=50, db_column='Estado', default='Activo')
     
+    # Nuevos campos agregados
+    ciudad = models.CharField(max_length=100, blank=True, null=True, db_column='Ciudad')
+    puesto = models.CharField(max_length=150, blank=True, null=True, db_column='Puesto')
+    experiencia = models.TextField(blank=True, null=True, db_column='Experiencia')
+    fecha_ingreso = models.DateField(blank=True, null=True, db_column='Fecha_Ingreso')
+    area = models.CharField(max_length=100, blank=True, null=True, db_column='Area')
+    division = models.CharField(max_length=100, blank=True, null=True, db_column='Division')
+    
     class Meta:
         db_table = 'Usuario'
         verbose_name = 'Usuario'
@@ -77,6 +85,16 @@ class ExpiringToken(DRFToken):
 
 class Empleado(models.Model):
     """Empleados de la empresa - Mapea a tabla Empleado"""
+    # Opciones para Tipo_Documento según el constraint CHECK
+    TIPO_DOCUMENTO_CHOICES = [
+        ('CC', 'Cédula de Ciudadanía'),
+        ('RC', 'Registro Civil'),
+        ('TI', 'Tarjeta de Identidad'),
+        ('CE', 'Cédula de Extranjería'),
+        ('PA', 'Pasaporte'),
+        ('NIT', 'NIT'),
+    ]
+    
     id_empleado = models.AutoField(primary_key=True, db_column='Id_Empleado')
     nombre = models.CharField(max_length=100, db_column='Nombre')
     apellido = models.CharField(max_length=100, db_column='Apellido')
@@ -91,6 +109,17 @@ class Empleado(models.Model):
     estado = models.CharField(max_length=50, blank=True, null=True, db_column='Estado', default='Activo')
     foto = models.ImageField(upload_to='empleados/fotos/', blank=True, null=True)  # Campo adicional no en BD
     
+    # Nuevos campos agregados
+    ciudad = models.CharField(max_length=100, blank=True, null=True, db_column='Ciudad')
+    numero_documento = models.CharField(max_length=50, blank=True, null=True, db_column='Numero_Documento')
+    tipo_documento = models.CharField(
+        max_length=20, 
+        blank=True, 
+        null=True, 
+        db_column='Tipo_Documento',
+        choices=TIPO_DOCUMENTO_CHOICES
+    )
+    
     class Meta:
         db_table = 'Empleado'
         verbose_name = 'Empleado'
@@ -103,13 +132,24 @@ class Empleado(models.Model):
 
 class Caso(models.Model):
     """Casos de documentación - Mapea a tabla Caso"""
+    ESTADO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('abierto', 'Abierto'),
+        ('cerrado', 'Cerrado'),
+    ]
+    
     id_caso = models.AutoField(primary_key=True, db_column='Id_Caso')
     empleado = models.ForeignKey(Empleado, on_delete=models.CASCADE, db_column='Id_Empleado', related_name='casos')
     tipo_fuero = models.CharField(max_length=100, blank=True, null=True, db_column='Tipo_Fuero')
     diagnostico = models.TextField(blank=True, null=True, db_column='Diagnostico')
     fecha_inicio = models.DateField(auto_now_add=True, db_column='Fecha_Inicio')
-    estado = models.CharField(max_length=50, db_column='Estado', default='Abierto')
-    responsable = models.CharField(max_length=150, blank=True, null=True, db_column='Responsable')
+    estado = models.CharField(
+        max_length=50, 
+        db_column='Estado', 
+        default='abierto',
+        choices=ESTADO_CHOICES
+    )
+    responsable = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, db_column='Responsable', related_name='casos_responsable')
     fecha_cierre = models.DateField(blank=True, null=True, db_column='Fecha_Cierre')
     observaciones = models.TextField(blank=True, null=True, db_column='Observaciones')
     
@@ -124,13 +164,19 @@ class Caso(models.Model):
     
     def cerrar(self):
         """Cierra el caso"""
-        self.estado = 'Cerrado'
+        self.estado = 'cerrado'
         self.fecha_cierre = timezone.now().date()
         self.save()
 
 
 class Alerta(models.Model):
     """Alertas asociadas a casos - Mapea a tabla Alerta"""
+    ESTADO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('enviada', 'Enviada'),
+        ('vencida', 'Vencida'),
+    ]
+    
     id_alerta = models.AutoField(primary_key=True, db_column='Id_Alerta')
     caso = models.ForeignKey(Caso, on_delete=models.CASCADE, db_column='Id_Caso', related_name='alertas')
     titulo = models.CharField(max_length=150, blank=True, null=True, db_column='Titulo')
@@ -138,7 +184,14 @@ class Alerta(models.Model):
     fecha_generada = models.DateField(auto_now_add=True, db_column='Fecha_Generada')
     fecha_envio = models.DateField(blank=True, null=True, db_column='Fecha_Envio')
     fecha_vencimiento = models.DateField(blank=True, null=True, db_column='Fecha_Vencimiento')
-    estado = models.CharField(max_length=50, blank=True, null=True, db_column='Estado', default='Pendiente')
+    estado = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True, 
+        db_column='Estado', 
+        default='pendiente',
+        choices=ESTADO_CHOICES
+    )
     descripcion = models.TextField(blank=True, null=True, db_column='Descripcion')
     
     class Meta:
@@ -151,15 +204,34 @@ class Alerta(models.Model):
         return f"{self.titulo} - {self.caso}"
 
 
+class Carpeta(models.Model):
+    """Carpetas para organizar documentos - Mapea a tabla Carpeta"""
+    id_carpeta = models.AutoField(primary_key=True, db_column='Id_Carpeta')
+    empleado = models.ForeignKey(Empleado, on_delete=models.CASCADE, db_column='Id_Empleado', related_name='carpetas')
+    nombre = models.CharField(max_length=150, db_column='Nombre')
+    fecha_creacion = models.DateField(auto_now_add=True, db_column='Fecha_Creacion')
+    
+    class Meta:
+        db_table = 'Carpeta'
+        verbose_name = 'Carpeta'
+        verbose_name_plural = 'Carpetas'
+        ordering = ['-fecha_creacion', 'nombre']
+    
+    def __str__(self):
+        return f"{self.nombre} - {self.empleado}"
+
+
 class Documento(models.Model):
     """Documentos asociados a casos - Mapea a tabla Documento"""
     id_documento = models.AutoField(primary_key=True, db_column='Id_Documento')
-    caso = models.ForeignKey(Caso, on_delete=models.CASCADE, db_column='Id_Caso', related_name='documentos')
+    caso = models.ForeignKey(Caso, on_delete=models.CASCADE, blank=True, null=True, db_column='Id_Caso', related_name='documentos')
     nombre = models.CharField(max_length=150, blank=True, null=True, db_column='Nombre')
     tipo = models.CharField(max_length=100, blank=True, null=True, db_column='Tipo')
     fecha_carga = models.DateField(auto_now_add=True, db_column='Fecha_Carga')
     fecha_modificacion = models.DateField(auto_now=True, db_column='Fecha_Modificacion')
-    usuario_creador = models.CharField(max_length=150, blank=True, null=True, db_column='Usuario_Creador')
+    usuario_creador = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, db_column='Usuario_Creador', related_name='documentos_creados')
+    empleado = models.ForeignKey(Empleado, on_delete=models.SET_NULL, blank=True, null=True, db_column='Id_Empleado', related_name='documentos')
+    carpeta = models.ForeignKey('Carpeta', on_delete=models.SET_NULL, blank=True, null=True, db_column='Id_Carpeta', related_name='documentos')
     descripcion = models.TextField(blank=True, null=True, db_column='Descripcion')
     ruta = models.TextField(blank=True, null=True, db_column='Ruta')  # Ruta del archivo
     extension = models.CharField(max_length=20, blank=True, null=True, db_column='Extension')

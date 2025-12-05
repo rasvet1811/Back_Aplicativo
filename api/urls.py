@@ -9,6 +9,7 @@ router.register(r'empleados', views.EmpleadoViewSet, basename='empleado')
 router.register(r'casos', views.CasoViewSet, basename='caso')
 router.register(r'alertas', views.AlertaViewSet, basename='alerta')
 router.register(r'documentos', views.DocumentoViewSet, basename='documento')
+router.register(r'carpetas', views.CarpetaViewSet, basename='carpeta')
 router.register(r'seguimientos', views.SeguimientoViewSet, basename='seguimiento')
 router.register(r'reportes', views.ReporteViewSet, basename='reporte')
 

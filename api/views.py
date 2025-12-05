@@ -3,23 +3,72 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from .models import ExpiringToken
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, BasePermission
 from django.contrib.auth import authenticate
 from django.utils import timezone
 from django.conf import settings
 from django.db.models import Q
 import secrets
+import logging
 from datetime import timedelta
 
+# Configurar logger
+logger = logging.getLogger(__name__)
+
 from .models import (
-    Rol, User, Empleado, Caso, Alerta, Documento,
+    Rol, User, Empleado, Caso, Alerta, Documento, Carpeta,
     Seguimiento, Reporte, TokenVerification
 )
 from .serializers import (
     RolSerializer, UserSerializer, UserPublicSerializer, LoginSerializer,
     EmpleadoSerializer, CasoSerializer, AlertaSerializer, DocumentoSerializer,
-    SeguimientoSerializer, ReporteSerializer, CambioRolSerializer, TokenVerificationSerializer
+    CarpetaSerializer, SeguimientoSerializer, ReporteSerializer, CambioRolSerializer, TokenVerificationSerializer
 )
+
+
+# ==================== PERMISOS PERSONALIZADOS ====================
+
+class IsAdminOrTHA(BasePermission):
+    """
+    Permiso personalizado que permite el acceso solo a usuarios con rol
+    'Administrador' o 'THA' (case-insensitive)
+    """
+    def has_permission(self, request, view):
+        # Verificar que el usuario esté autenticado
+        if not request.user or not request.user.is_authenticated:
+            print(f"[IsAdminOrTHA] Usuario no autenticado: {request.user}")
+            return False
+        
+        # IMPORTANTE: Recargar el usuario con el rol desde la BD para evitar problemas de cache
+        try:
+            # Usar select_related para cargar el rol en una sola consulta
+            user = User.objects.select_related('rol').get(pk=request.user.pk)
+            print(f"[IsAdminOrTHA] Usuario cargado: {user.username}, ID: {user.pk}")
+        except User.DoesNotExist:
+            print(f"[IsAdminOrTHA] Usuario no encontrado en BD: {request.user.pk}")
+            return False
+        except Exception as e:
+            print(f"[IsAdminOrTHA] Error al cargar usuario: {e}")
+            return False
+        
+        # Verificar que el usuario tenga un rol asignado
+        if not user.rol:
+            print(f"[IsAdminOrTHA] Usuario {user.username} sin rol asignado")
+            return False
+        
+        # Verificar que el rol sea 'Administrador' o 'THA' (case-insensitive)
+        rol_tipo = user.rol.tipo
+        if not rol_tipo:
+            print(f"[IsAdminOrTHA] Rol sin tipo para usuario {user.username}")
+            return False
+        
+        # Convertir a minúsculas para comparación case-insensitive
+        rol_tipo_lower = rol_tipo.lower()
+        resultado = rol_tipo_lower in ['administrador', 'tha']
+        
+        print(f"[IsAdminOrTHA] Usuario: {user.username}, Rol tipo: '{rol_tipo}' -> '{rol_tipo_lower}', Permiso: {resultado}")
+        
+        return resultado
 
 
 # ==================== FUNCIONES PÚBLICAS ====================
@@ -44,6 +93,7 @@ def api_info(request):
                 'empleados': '/api/empleados/',
                 'casos': '/api/casos/',
                 'documentos': '/api/documentos/',
+                'carpetas': '/api/carpetas/',
                 'alertas': '/api/alertas/',
                 'seguimientos': '/api/seguimientos/',
                 'reportes': '/api/reportes/',
@@ -255,12 +305,12 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
     
     def get_permissions(self):
-        # Solo admin puede crear, modificar o eliminar usuarios
+        # Solo usuarios con rol 'Administrador' o 'THA' pueden crear, modificar o eliminar usuarios
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAdminUser()]
+            return [IsAuthenticated(), IsAdminOrTHA()]
         return [IsAuthenticated()]
     
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsAdminOrTHA])
     def cambiar_rol(self, request, pk=None):
         """Cambiar rol de un usuario con verificación"""
         serializer = CambioRolSerializer(data=request.data)
@@ -322,15 +372,26 @@ class EmpleadoViewSet(viewsets.ModelViewSet):
         nombre = self.request.query_params.get('nombre', None) or search
         estado = self.request.query_params.get('estado', None)
         area = self.request.query_params.get('area', None)
+        ciudad = self.request.query_params.get('ciudad', None)
+        tipo_documento = self.request.query_params.get('tipo_documento', None)
+        numero_documento = self.request.query_params.get('numero_documento', None)
         
         if nombre:
             queryset = queryset.filter(
-                Q(nombre__icontains=nombre) | Q(apellido__icontains=nombre)
+                Q(nombre__icontains=nombre) | 
+                Q(apellido__icontains=nombre) |
+                Q(numero_documento__icontains=nombre)
             )
         if estado:
             queryset = queryset.filter(estado=estado)
         if area:
             queryset = queryset.filter(area=area)
+        if ciudad:
+            queryset = queryset.filter(ciudad__icontains=ciudad)
+        if tipo_documento:
+            queryset = queryset.filter(tipo_documento=tipo_documento)
+        if numero_documento:
+            queryset = queryset.filter(numero_documento__icontains=numero_documento)
         
         return queryset
     
@@ -355,13 +416,23 @@ class CasoViewSet(viewsets.ModelViewSet):
         # Filtros opcionales
         estado = self.request.query_params.get('estado', None)
         empleado_id = self.request.query_params.get('empleado', None)
+        tipo_fuero = self.request.query_params.get('tipo_fuero', None)
         
         if estado:
             queryset = queryset.filter(estado=estado)
         if empleado_id:
             queryset = queryset.filter(empleado_id=empleado_id)
+        if tipo_fuero:
+            queryset = queryset.filter(tipo_fuero=tipo_fuero)
         
         return queryset
+    
+    def perform_create(self, serializer):
+        # Asignar responsable automáticamente si no se proporciona
+        if 'responsable' not in serializer.validated_data or serializer.validated_data.get('responsable') is None:
+            serializer.save(responsable=self.request.user)
+        else:
+            serializer.save()
     
     @action(detail=True, methods=['post'])
     def cerrar(self, request, pk=None):
@@ -420,6 +491,24 @@ class AlertaViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+class CarpetaViewSet(viewsets.ModelViewSet):
+    """ViewSet para carpetas"""
+    queryset = Carpeta.objects.all()
+    serializer_class = CarpetaSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        queryset = Carpeta.objects.all()
+        
+        # Filtro por empleado usando query parameter ?empleado=ID
+        empleado_id = self.request.query_params.get('empleado', None)
+        
+        if empleado_id:
+            queryset = queryset.filter(empleado_id=empleado_id)
+        
+        return queryset
+
+
 class DocumentoViewSet(viewsets.ModelViewSet):
     """ViewSet para documentos"""
     queryset = Documento.objects.all()
@@ -441,8 +530,8 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         return queryset
     
     def perform_create(self, serializer):
-        # Asignar usuario creador
-        serializer.save(usuario_creador=self.request.user.username)
+        # Asignar usuario creador (ahora es ForeignKey, no string)
+        serializer.save(usuario_creador=self.request.user)
 
 
 class SeguimientoViewSet(viewsets.ModelViewSet):

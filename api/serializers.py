@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from .models import (
-    Rol, User, Empleado, Caso, Alerta, Documento, 
+    Rol, User, Empleado, Caso, Alerta, Documento, Carpeta,
     Seguimiento, Reporte, TokenVerification
 )
 import os
@@ -30,7 +30,9 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'nombre', 'rol', 'rol_tipo', 
-            'correo', 'estado', 'password'
+            'correo', 'estado', 'password',
+            'ciudad', 'puesto', 'experiencia', 'fecha_ingreso', 
+            'area', 'division'
         ]
         read_only_fields = ['id']
     
@@ -61,7 +63,10 @@ class UserPublicSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'nombre', 'rol', 'rol_tipo', 'correo', 'estado']
+        fields = [
+            'id', 'username', 'nombre', 'rol', 'rol_tipo', 'correo', 'estado',
+            'ciudad', 'puesto', 'experiencia', 'fecha_ingreso', 'area', 'division'
+        ]
     
     def get_rol_tipo(self, obj):
         return obj.rol.tipo if obj.rol else None
@@ -102,7 +107,8 @@ class EmpleadoSerializer(serializers.ModelSerializer):
             'id', 'nombre', 'apellido', 'nombre_completo', 'cargo', 
             'division', 'area', 'supervisor', 'fecha_nacimiento', 
             'fecha_ingreso', 'correo', 'telefono', 'estado', 'foto', 
-            'foto_url', 'total_casos'
+            'foto_url', 'total_casos', 'ciudad', 'numero_documento', 
+            'tipo_documento'
         ]
         read_only_fields = ['id']
     
@@ -161,12 +167,41 @@ class CasoSerializer(serializers.ModelSerializer):
     def get_total_seguimientos(self, obj):
         return obj.seguimientos.count()
     
+    def validate_empleado(self, value):
+        """Validar que el empleado existe y está activo"""
+        if not value:
+            raise serializers.ValidationError("El empleado es requerido")
+        if hasattr(value, 'estado') and value.estado != 'Activo':
+            raise serializers.ValidationError("El empleado debe estar activo")
+        return value
+    
+    def validate_estado(self, value):
+        """Validar que el estado sea uno de los valores permitidos"""
+        estados_permitidos = ['pendiente', 'abierto', 'cerrado']
+        if value and value.lower() not in estados_permitidos:
+            raise serializers.ValidationError(
+                f"El estado debe ser uno de: {', '.join(estados_permitidos)}"
+            )
+        return value.lower() if value else value
+    
+    def create(self, validated_data):
+        """Crear un caso"""
+        # Asegurar que el estado tenga el valor por defecto si no se proporciona
+        if 'estado' not in validated_data:
+            validated_data['estado'] = 'abierto'
+        # Normalizar el estado a minúsculas
+        if 'estado' in validated_data and validated_data['estado']:
+            validated_data['estado'] = validated_data['estado'].lower()
+        return super().create(validated_data)
+    
     def update(self, instance, validated_data):
         # Si se cambia el estado a cerrado, actualizar fecha_cierre
-        if 'estado' in validated_data and validated_data['estado'] == 'cerrado':
-            if not instance.fecha_cierre:
+        if 'estado' in validated_data:
+            estado = validated_data['estado'].lower() if validated_data['estado'] else validated_data['estado']
+            validated_data['estado'] = estado
+            if estado == 'cerrado' and not instance.fecha_cierre:
                 from django.utils import timezone
-                validated_data['fecha_cierre'] = timezone.now()
+                validated_data['fecha_cierre'] = timezone.now().date()
         return super().update(instance, validated_data)
 
 
@@ -189,6 +224,62 @@ class AlertaSerializer(serializers.ModelSerializer):
     
     def get_caso_info(self, obj):
         return f"Caso #{obj.caso.id_caso} - {obj.caso.empleado}"
+    
+    def validate_estado(self, value):
+        """Validar que el estado sea uno de los valores permitidos"""
+        estados_permitidos = ['pendiente', 'enviada', 'vencida']
+        if value and value.lower() not in estados_permitidos:
+            raise serializers.ValidationError(
+                f"El estado debe ser uno de: {', '.join(estados_permitidos)}"
+            )
+        return value.lower() if value else value
+    
+    def create(self, validated_data):
+        """Crear una alerta"""
+        # Asegurar que el estado tenga el valor por defecto si no se proporciona
+        if 'estado' not in validated_data or not validated_data.get('estado'):
+            validated_data['estado'] = 'pendiente'
+        # Normalizar el estado a minúsculas
+        if 'estado' in validated_data and validated_data['estado']:
+            validated_data['estado'] = validated_data['estado'].lower()
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """Actualizar una alerta"""
+        # Normalizar el estado a minúsculas si se proporciona
+        if 'estado' in validated_data and validated_data['estado']:
+            validated_data['estado'] = validated_data['estado'].lower()
+        return super().update(instance, validated_data)
+
+
+class CarpetaSerializer(serializers.ModelSerializer):
+    """Serializer para carpetas"""
+    id = serializers.SerializerMethodField()
+    empleado_nombre = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Carpeta
+        fields = ['id', 'empleado', 'empleado_nombre', 'nombre', 'fecha_creacion']
+        read_only_fields = ['id', 'fecha_creacion', 'empleado_nombre']
+    
+    def get_id(self, obj):
+        return obj.id_carpeta
+    
+    def get_empleado_nombre(self, obj):
+        """Retorna el nombre completo del empleado (nombre + apellido)"""
+        return f"{obj.empleado.nombre} {obj.empleado.apellido}"
+    
+    def validate_empleado(self, value):
+        """Validar que el empleado existe"""
+        if not value:
+            raise serializers.ValidationError("El empleado es requerido")
+        return value
+    
+    def validate_nombre(self, value):
+        """Validar que el nombre no esté vacío"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("El nombre de la carpeta no puede estar vacío")
+        return value.strip()
 
 
 class DocumentoSerializer(serializers.ModelSerializer):
@@ -198,6 +289,7 @@ class DocumentoSerializer(serializers.ModelSerializer):
     archivo_nombre = serializers.SerializerMethodField()
     caso_info = serializers.SerializerMethodField()
     usuario_creador_nombre = serializers.SerializerMethodField()
+    caso = serializers.PrimaryKeyRelatedField(queryset=Caso.objects.all(), required=False, allow_null=True)
     
     class Meta:
         model = Documento
@@ -205,7 +297,7 @@ class DocumentoSerializer(serializers.ModelSerializer):
             'id', 'caso', 'caso_info', 'nombre', 'tipo', 
             'fecha_carga', 'fecha_modificacion', 'usuario_creador',
             'usuario_creador_nombre', 'descripcion', 'ruta', 
-            'archivo_url', 'archivo_nombre', 'extension'
+            'archivo_url', 'archivo_nombre', 'extension', 'empleado', 'carpeta'
         ]
         read_only_fields = ['id', 'fecha_carga', 'fecha_modificacion', 'extension']
     
@@ -226,7 +318,9 @@ class DocumentoSerializer(serializers.ModelSerializer):
         return None
     
     def get_caso_info(self, obj):
-        return f"Caso #{obj.caso.id} - {obj.caso.empleado}"
+        if obj.caso:
+            return f"Caso #{obj.caso.id_caso} - {obj.caso.empleado}"
+        return None
     
     def get_usuario_creador_nombre(self, obj):
         return obj.usuario_creador.nombre if obj.usuario_creador else None
