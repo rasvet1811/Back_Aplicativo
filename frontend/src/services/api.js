@@ -569,4 +569,8 @@ export const usuariosAPI = {
       token_verificacion: verifResponse.token,
     });
   },
+
+  requestPasswordReset: (email) => {
+    return api.post('/auth/password-reset/', { email });
+  },
 };

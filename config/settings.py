@@ -79,14 +79,21 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'tablas',
+      'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'RRHH',
         'USER': 'postgres',
-        'PASSWORD': '123456',
+        'PASSWORD': 'postgres123',
         'HOST': 'localhost',
         'PORT': '5432',
     }
 }
+#DATABASES = {
+ #   'default': {
+  #      'ENGINE': 'django.db.backends.sqlite3',
+   #     'NAME': BASE_DIR / 'db.sqlite3',
+    #}
+#}
+
 
 
 # Password validation
@@ -192,3 +199,14 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 # Token Expiration (30 minutos)
 TOKEN_EXPIRATION_MINUTES = 30
+
+# Email Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Para desarrollo - imprime emails en consola
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # Para producción
+
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'tu-email@gmail.com'
+EMAIL_HOST_PASSWORD = 'tu-contraseña-app'
+DEFAULT_FROM_EMAIL = 'tu-email@gmail.com'

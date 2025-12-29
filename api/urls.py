@@ -26,6 +26,9 @@ urlpatterns = [
     # Verificación de identidad
     path('auth/solicitar-verificacion-rol/', views.solicitar_verificacion_rol, name='solicitar_verificacion_rol'),
     
+    # Restablecimiento de contraseña
+    path('auth/password-reset/', views.password_reset_request, name='password_reset_request'),
+    
     # Rutas del router
     path('', include(router.urls)),
 ]

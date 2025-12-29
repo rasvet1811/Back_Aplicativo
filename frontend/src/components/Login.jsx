@@ -127,6 +127,22 @@ const Login = () => {
             {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
           </button>
         </form>
+
+        <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+          <button
+            onClick={() => navigate('/reset-password')}
+            style={{
+              backgroundColor: 'transparent',
+              color: '#007bff',
+              border: 'none',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              fontSize: '0.9rem'
+            }}
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
+        </div>
       </div>
     </div>
   );

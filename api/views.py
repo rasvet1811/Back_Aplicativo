@@ -5,8 +5,7 @@ from rest_framework.authtoken.models import Token
 from .models import ExpiringToken
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, BasePermission
 from django.contrib.auth import authenticate
-from django.utils import timezone
-from django.conf import settings
+from django.core.mail import send_mail
 from django.db.models import Q
 import secrets
 import logging
@@ -276,6 +275,71 @@ def solicitar_verificacion_rol(request):
         'mensaje': 'Token de verificación generado. Debe confirmar la operación con este token.',
         'fecha_expiracion': fecha_expiracion.isoformat()
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def password_reset_request(request):
+    """Solicitar restablecimiento de contraseña"""
+    email = request.data.get('email')
+    
+    if not email:
+        return Response(
+            {'error': 'El campo email es requerido'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        # Verificar si existe un usuario con ese email
+        user = User.objects.filter(correo=email).first()
+        
+        if user:
+            # Generar token de verificación para reset de contraseña
+            token = secrets.token_urlsafe(32)
+            expires_at = timezone.now() + timedelta(hours=1)  # Expira en 1 hora
+            
+            TokenVerification.objects.create(
+                user=user,
+                token=token,
+                operacion='reset_password',
+                datos={'email': email},
+                fecha_expiracion=expires_at
+            )
+            
+            # Enviar email de restablecimiento
+            reset_url = f"http://localhost:3000/reset-password?token={token}"
+            try:
+                send_mail(
+                    'Restablecimiento de contraseña - BackMaaji',
+                    f'Haz clic en el siguiente enlace para restablecer tu contraseña:\n\n{reset_url}\n\n'
+                    f'Este enlace expirará en 1 hora.\n\n'
+                    f'Si no solicitaste este restablecimiento, ignora este mensaje.',
+                    settings.DEFAULT_FROM_EMAIL,
+                    [email],
+                    fail_silently=False,
+                )
+                logger.info(f"Email de reset enviado a {email}")
+            except Exception as e:
+                logger.error(f"Error enviando email de reset a {email}: {e}")
+                # En desarrollo, mostrar el token en la respuesta
+                if settings.DEBUG:
+                    return Response({
+                        'message': 'Email enviado (desarrollo)',
+                        'token': token,
+                        'reset_url': reset_url
+                    }, status=status.HTTP_200_OK)
+        
+        # Por seguridad, siempre devolver el mismo mensaje
+        return Response({
+            'message': 'Si el email existe en nuestro sistema, se envió un enlace de restablecimiento'
+        }, status=status.HTTP_200_OK)
+            
+    except Exception as e:
+        logger.error(f"Error en password reset request: {e}")
+        return Response(
+            {'error': 'Error al procesar la solicitud'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 # ==================== VIEWSETS ====================

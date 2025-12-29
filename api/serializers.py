@@ -128,6 +128,42 @@ class EmpleadoSerializer(serializers.ModelSerializer):
     
     def get_nombre_completo(self, obj):
         return f"{obj.nombre} {obj.apellido}"
+    
+    def validate_numero_documento(self, value):
+        """Validar que el número de documento sea único"""
+        if self.instance:
+            # Si estamos actualizando, excluir el registro actual
+            if Empleado.objects.exclude(pk=self.instance.pk).filter(numero_documento=value).exists():
+                raise serializers.ValidationError("Ya existe un empleado con este número de documento.")
+        else:
+            # Si estamos creando
+            if Empleado.objects.filter(numero_documento=value).exists():
+                raise serializers.ValidationError("Ya existe un empleado con este número de documento.")
+        return value
+
+    def validate_correo(self, value):
+        """Validar que el correo sea único"""
+        if self.instance:
+            if Empleado.objects.exclude(pk=self.instance.pk).filter(correo=value).exists():
+                raise serializers.ValidationError("Ya existe un empleado con este correo electrónico.")
+        else:
+            if Empleado.objects.filter(correo=value).exists():
+                raise serializers.ValidationError("Ya existe un empleado con este correo electrónico.")
+        return value
+    
+    def validate_fecha_nacimiento(self, value):
+        """Validar que la fecha de nacimiento sea anterior a la fecha actual"""
+        from django.utils import timezone
+        if value >= timezone.now().date():
+            raise serializers.ValidationError("La fecha de nacimiento debe ser anterior a la fecha actual.")
+        return value
+    
+    def validate_fecha_ingreso(self, value):
+        """Validar que la fecha de ingreso no sea futura"""
+        from django.utils import timezone
+        if value > timezone.now().date():
+            raise serializers.ValidationError("La fecha de ingreso no puede ser futura.")
+        return value
 
 
 class CasoSerializer(serializers.ModelSerializer):

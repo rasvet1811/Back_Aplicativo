@@ -102,23 +102,21 @@ class Empleado(models.Model):
     division = models.CharField(max_length=100, blank=True, null=True, db_column='Division')
     area = models.CharField(max_length=100, blank=True, null=True, db_column='Area')
     supervisor = models.CharField(max_length=150, blank=True, null=True, db_column='Supervisor')
-    fecha_nacimiento = models.DateField(blank=True, null=True, db_column='Fecha_Nacimiento')
-    fecha_ingreso = models.DateField(blank=True, null=True, db_column='Fecha_Ingreso')
-    correo = models.EmailField(blank=True, null=True, max_length=150, db_column='Correo')
-    telefono = models.CharField(max_length=50, blank=True, null=True, db_column='Telefono')
+    fecha_nacimiento = models.DateField(db_column='Fecha_Nacimiento')  # Ahora obligatorio
+    fecha_ingreso = models.DateField(db_column='Fecha_Ingreso')  # Ahora obligatorio
+    correo = models.EmailField(unique=True, max_length=150, db_column='Correo')  # Ahora obligatorio y único
+    telefono = models.CharField(max_length=50, db_column='Telefono')  # Ahora obligatorio
     estado = models.CharField(max_length=50, blank=True, null=True, db_column='Estado', default='Activo')
     foto = models.ImageField(upload_to='empleados/fotos/', blank=True, null=True)  # Campo adicional no en BD
     
-    # Nuevos campos agregados
-    ciudad = models.CharField(max_length=100, blank=True, null=True, db_column='Ciudad')
-    numero_documento = models.CharField(max_length=50, blank=True, null=True, db_column='Numero_Documento')
+    # Nuevos campos obligatorios
+    ciudad = models.CharField(max_length=100, db_column='Ciudad')  # Ahora obligatorio
+    numero_documento = models.CharField(max_length=50, unique=True, db_column='Numero_Documento')  # Ahora obligatorio y único
     tipo_documento = models.CharField(
         max_length=20, 
-        blank=True, 
-        null=True, 
         db_column='Tipo_Documento',
         choices=TIPO_DOCUMENTO_CHOICES
-    )
+    )  # Ahora obligatorio
     
     class Meta:
         db_table = 'Empleado'
