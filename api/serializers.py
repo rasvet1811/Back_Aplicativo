@@ -415,7 +415,9 @@ class CambioRolSerializer(serializers.Serializer):
     """Serializer para cambio de rol con verificación"""
     user_id = serializers.IntegerField()
     nuevo_rol_id = serializers.IntegerField()
-    token_verificacion = serializers.CharField(write_only=True)
+    # Hacer el token de verificación opcional para permitir cambios directos
+    # cuando el usuario que hace la petición tiene permisos (Administrador/THA).
+    token_verificacion = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
 
 class TokenVerificationSerializer(serializers.ModelSerializer):

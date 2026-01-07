@@ -10,6 +10,8 @@ from django.db.models import Q
 import secrets
 import logging
 from datetime import timedelta
+from django.conf import settings
+from django.utils import timezone
 
 # Configurar logger
 logger = logging.getLogger(__name__)
@@ -383,38 +385,58 @@ class UserViewSet(viewsets.ModelViewSet):
         
         token_verificacion = serializer.validated_data['token_verificacion']
         nuevo_rol_id = serializer.validated_data['nuevo_rol_id']
-        
-        try:
-            verificacion = TokenVerification.objects.get(
-                token=token_verificacion,
-                operacion='cambio_rol',
-                usado=False
-            )
-            
-            if not verificacion.is_valid():
+        # Si se envió un token de verificación, validarlo y usarlo
+        if token_verificacion:
+            try:
+                verificacion = TokenVerification.objects.get(
+                    token=token_verificacion,
+                    operacion='cambio_rol',
+                    usado=False
+                )
+
+                if not verificacion.is_valid():
+                    return Response({
+                        'error': 'Token de verificación expirado o inválido'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                user = self.get_object()
+                nuevo_rol = Rol.objects.get(id_rol=nuevo_rol_id)
+                user.rol = nuevo_rol
+                user.save()
+
+                # Marcar token como usado
+                verificacion.usado = True
+                verificacion.save()
+
+                user_serializer = UserPublicSerializer(user)
                 return Response({
-                    'error': 'Token de verificación expirado o inválido'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
+                    'mensaje': 'Rol cambiado exitosamente',
+                    'user': user_serializer.data
+                }, status=status.HTTP_200_OK)
+
+            except TokenVerification.DoesNotExist:
+                return Response({
+                    'error': 'Token de verificación no encontrado'
+                }, status=status.HTTP_404_NOT_FOUND)
+            except Rol.DoesNotExist:
+                return Response({
+                    'error': 'Rol no encontrado'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+        # Si no se envió token, permitir cambio directo siempre y cuando
+        # la petición provenga de un usuario con permisos (IsAdminOrTHA)
+        try:
             user = self.get_object()
             nuevo_rol = Rol.objects.get(id_rol=nuevo_rol_id)
             user.rol = nuevo_rol
             user.save()
-            
-            # Marcar token como usado
-            verificacion.usado = True
-            verificacion.save()
-            
+
             user_serializer = UserPublicSerializer(user)
             return Response({
-                'mensaje': 'Rol cambiado exitosamente',
+                'mensaje': 'Rol cambiado exitosamente (sin verificación)',
                 'user': user_serializer.data
             }, status=status.HTTP_200_OK)
-            
-        except TokenVerification.DoesNotExist:
-            return Response({
-                'error': 'Token de verificación no encontrado'
-            }, status=status.HTTP_404_NOT_FOUND)
+
         except Rol.DoesNotExist:
             return Response({
                 'error': 'Rol no encontrado'
