@@ -615,6 +615,54 @@ class DocumentoViewSet(viewsets.ModelViewSet):
         
         return queryset
     
+    def list(self, request, *args, **kwargs):
+        """List endpoint seguro para documentos.
+        Valida query params `empleado` y `carpeta`, registra los params y
+        evita excepciones que provoquen 500.
+        """
+        logger.debug("documentos list - query_params: %s", request.query_params)
+
+        # Empezar con el queryset base (aplica filtros por caso/tipo si vienen)
+        queryset = self.get_queryset()
+
+        empleado_param = request.query_params.get('empleado')
+        carpeta_param = request.query_params.get('carpeta')
+
+        # Validar y aplicar filtro empleado
+        if empleado_param:
+            try:
+                empleado_id = int(empleado_param)
+                queryset = queryset.filter(empleado_id=empleado_id)
+            except (ValueError, TypeError) as e:
+                logger.warning("Parámetro 'empleado' inválido: %s", empleado_param)
+                # Omitir el filtro en vez de devolver 500
+                # Si prefieres devolver 400, descomenta la siguiente línea:
+                # return Response({"detail":"empleado debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar y aplicar filtro carpeta
+        if carpeta_param:
+            try:
+                carpeta_id = int(carpeta_param)
+                queryset = queryset.filter(carpeta_id=carpeta_id)
+            except (ValueError, TypeError) as e:
+                logger.warning("Parámetro 'carpeta' inválido: %s", carpeta_param)
+                # Omitir el filtro en vez de devolver 500
+                # Si prefieres devolver 400, descomenta la siguiente línea:
+                # return Response({"detail":"carpeta debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True, context={'request': request})
+                return self.get_paginated_response(serializer.data)
+
+            serializer = self.get_serializer(queryset, many=True, context={'request': request})
+            return Response(serializer.data)
+        except Exception:
+            # Capturar excepciones imprevistas, loguear y devolver 500 con mensaje amigable
+            logger.exception("Error al listar documentos con params: %s", request.query_params)
+            return Response({"detail":"Error interno al listar documentos"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
     def perform_create(self, serializer):
         # Asignar usuario creador (ahora es ForeignKey, no string)
         serializer.save(usuario_creador=self.request.user)
