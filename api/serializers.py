@@ -319,10 +319,9 @@ class CarpetaSerializer(serializers.ModelSerializer):
 
 
 class DocumentoSerializer(serializers.ModelSerializer):
-    """Serializer para documentos"""
+    """Serializer para documentos. Sin archivo binario; descarga solo vía URL protegida."""
     id = serializers.SerializerMethodField()
-    archivo_url = serializers.SerializerMethodField()
-    archivo_nombre = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
     caso_info = serializers.SerializerMethodField()
     usuario_creador_nombre = serializers.SerializerMethodField()
     caso = serializers.PrimaryKeyRelatedField(queryset=Caso.objects.all(), required=False, allow_null=True)
@@ -330,28 +329,26 @@ class DocumentoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Documento
         fields = [
-            'id', 'caso', 'caso_info', 'nombre', 'tipo', 
+            'id', 'caso', 'caso_info', 'nombre', 'tipo',
             'fecha_carga', 'fecha_modificacion', 'usuario_creador',
-            'usuario_creador_nombre', 'descripcion', 'ruta', 
-            'archivo_url', 'archivo_nombre', 'extension', 'empleado', 'carpeta'
+            'usuario_creador_nombre', 'descripcion', 'ruta',
+            'download_url', 'extension', 'empleado', 'carpeta',
+            'nivel_sensibilidad', 'tamano_bytes', 'checksum_sha256',
         ]
-        read_only_fields = ['id', 'fecha_carga', 'fecha_modificacion', 'extension']
+        read_only_fields = [
+            'id', 'fecha_carga', 'fecha_modificacion', 'extension',
+            'ruta', 'tamano_bytes', 'checksum_sha256',
+        ]
     
     def get_id(self, obj):
         return obj.id_documento
     
-    def get_archivo_url(self, obj):
-        if obj.ruta:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.ruta.url)
-            return obj.ruta.url
-        return None
-    
-    def get_archivo_nombre(self, obj):
-        if obj.ruta:
-            return os.path.basename(obj.ruta.name)
-        return None
+    def get_download_url(self, obj):
+        """URL de descarga protegida (vista), no acceso directo al archivo."""
+        request = self.context.get('request')
+        if not request:
+            return None
+        return request.build_absolute_uri(f'/api/documentos/{obj.id_documento}/descargar/')
     
     def get_caso_info(self, obj):
         if obj.caso:

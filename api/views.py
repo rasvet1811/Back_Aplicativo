@@ -20,6 +20,13 @@ from .models import (
     Rol, User, Empleado, Caso, Alerta, Documento, Carpeta,
     Seguimiento, Reporte, TokenVerification
 )
+from .document_service import (
+    save_uploaded_file,
+    get_document_file_path,
+    delete_document_file,
+    registrar_auditoria_documento,
+    user_can_access_document,
+)
 from .serializers import (
     RolSerializer, UserSerializer, UserPublicSerializer, LoginSerializer,
     EmpleadoSerializer, CasoSerializer, AlertaSerializer, DocumentoSerializer,
@@ -309,7 +316,8 @@ def password_reset_request(request):
             )
             
             # Enviar email de restablecimiento
-            reset_url = f"http://localhost:3000/reset-password?token={token}"
+            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
+            reset_url = f"{frontend_url}/reset-password?token={token}"
             try:
                 send_mail(
                     'Restablecimiento de contraseña - BackMaaji',
@@ -596,75 +604,136 @@ class CarpetaViewSet(viewsets.ModelViewSet):
 
 
 class DocumentoViewSet(viewsets.ModelViewSet):
-    """ViewSet para documentos"""
+    """ViewSet para documentos. Subida/descarga centralizada; sin URL directa; auditoría obligatoria."""
     queryset = Documento.objects.all()
     serializer_class = DocumentoSerializer
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        queryset = Documento.objects.all()
-        
-        # Filtros opcionales
+        queryset = Documento.objects.select_related('caso', 'usuario_creador', 'empleado', 'carpeta')
         caso_id = self.request.query_params.get('caso', None)
         tipo = self.request.query_params.get('tipo', None)
-        
         if caso_id:
             queryset = queryset.filter(caso_id=caso_id)
         if tipo:
             queryset = queryset.filter(tipo=tipo)
-        
         return queryset
     
+    def _filter_by_permission(self, queryset, request):
+        """Filtra documentos a los que el usuario tiene acceso (Rol + Nivel_Sensibilidad)."""
+        user = request.user
+        allowed = []
+        for doc in queryset:
+            if user_can_access_document(user, doc):
+                allowed.append(doc.pk)
+        return queryset.filter(pk__in=allowed) if allowed else queryset.none()
+    
     def list(self, request, *args, **kwargs):
-        """List endpoint seguro para documentos.
-        Valida query params `empleado` y `carpeta`, registra los params y
-        evita excepciones que provoquen 500.
-        """
-        logger.debug("documentos list - query_params: %s", request.query_params)
-
-        # Empezar con el queryset base (aplica filtros por caso/tipo si vienen)
         queryset = self.get_queryset()
-
         empleado_param = request.query_params.get('empleado')
         carpeta_param = request.query_params.get('carpeta')
-
-        # Validar y aplicar filtro empleado
         if empleado_param:
             try:
-                empleado_id = int(empleado_param)
-                queryset = queryset.filter(empleado_id=empleado_id)
-            except (ValueError, TypeError) as e:
-                logger.warning("Parámetro 'empleado' inválido: %s", empleado_param)
-                # Omitir el filtro en vez de devolver 500
-                # Si prefieres devolver 400, descomenta la siguiente línea:
-                # return Response({"detail":"empleado debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Validar y aplicar filtro carpeta
+                queryset = queryset.filter(empleado_id=int(empleado_param))
+            except (ValueError, TypeError):
+                pass
         if carpeta_param:
             try:
-                carpeta_id = int(carpeta_param)
-                queryset = queryset.filter(carpeta_id=carpeta_id)
-            except (ValueError, TypeError) as e:
-                logger.warning("Parámetro 'carpeta' inválido: %s", carpeta_param)
-                # Omitir el filtro en vez de devolver 500
-                # Si prefieres devolver 400, descomenta la siguiente línea:
-                # return Response({"detail":"carpeta debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
-
+                queryset = queryset.filter(carpeta_id=int(carpeta_param))
+            except (ValueError, TypeError):
+                pass
+        queryset = self._filter_by_permission(queryset, request)
         try:
             page = self.paginate_queryset(queryset)
             if page is not None:
                 serializer = self.get_serializer(page, many=True, context={'request': request})
                 return self.get_paginated_response(serializer.data)
-
             serializer = self.get_serializer(queryset, many=True, context={'request': request})
             return Response(serializer.data)
         except Exception:
-            # Capturar excepciones imprevistas, loguear y devolver 500 con mensaje amigable
-            logger.exception("Error al listar documentos con params: %s", request.query_params)
-            return Response({"detail":"Error interno al listar documentos"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.exception("Error al listar documentos")
+            return Response({"detail": "Error interno al listar documentos"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not user_can_access_document(request.user, instance):
+            return Response({"detail": "No tiene permiso para ver este documento."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+    
+    def create(self, request, *args, **kwargs):
+        archivo = request.FILES.get('archivo') or request.FILES.get('file')
+        if not archivo:
+            return Response(
+                {"detail": "Se requiere un archivo (campo 'archivo' o 'file')."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            meta = save_uploaded_file(archivo, nombre_logico=archivo.name)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        nivel = request.data.get('nivel_sensibilidad') or 'CONFIDENCIAL'
+        if nivel.upper() not in ('PUBLICO', 'CONFIDENCIAL', 'RESTRINGIDO'):
+            nivel = 'CONFIDENCIAL'
+        # Normalizar IDs vacíos a None (multipart envía strings)
+        def _pk(val):
+            if val is None or val == '':
+                return None
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return None
+        data = {
+            'nombre': request.data.get('nombre') or archivo.name,
+            'tipo': request.data.get('tipo') or '',
+            'descripcion': request.data.get('descripcion') or '',
+            'caso': _pk(request.data.get('caso')),
+            'empleado': _pk(request.data.get('empleado')),
+            'carpeta': _pk(request.data.get('carpeta')),
+            'nivel_sensibilidad': nivel.upper(),
+        }
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        # ruta, extension, tamano_bytes, checksum_sha256 son read_only; pasarlos en save()
+        doc = serializer.save(
+            usuario_creador=request.user,
+            ruta=meta['ruta'],
+            extension=meta['extension'],
+            tamano_bytes=meta['tamano_bytes'],
+            checksum_sha256=meta['checksum_sha256'],
+        )
+        registrar_auditoria_documento('SUBIDA', doc, request.user, request)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not user_can_access_document(request.user, instance):
+            return Response({"detail": "No tiene permiso para eliminar este documento."}, status=status.HTTP_403_FORBIDDEN)
+        registrar_auditoria_documento('ELIMINADO', instance, request.user, request)
+        delete_document_file(instance)
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    @action(detail=True, methods=['get'], url_path='descargar')
+    def descargar(self, request, pk=None):
+        """Descarga el archivo solo vía vista protegida (sin URL directa)."""
+        documento = self.get_object()
+        if not user_can_access_document(request.user, documento):
+            return Response({"detail": "No tiene permiso para descargar este documento."}, status=status.HTTP_403_FORBIDDEN)
+        path = get_document_file_path(documento)
+        if not path:
+            return Response({"detail": "Archivo no encontrado en almacenamiento."}, status=status.HTTP_404_NOT_FOUND)
+        registrar_auditoria_documento('DESCARGA', documento, request.user, request)
+        from django.http import FileResponse
+        import mimetypes
+        name = documento.nombre or documento.ruta or 'documento'
+        if documento.extension and not name.endswith('.' + documento.extension):
+            name = f"{name}.{documento.extension}"
+        content_type, _ = mimetypes.guess_type(name) or ('application/octet-stream', None)
+        return FileResponse(open(path, 'rb'), as_attachment=True, filename=name, content_type=content_type)
     
     def perform_create(self, serializer):
-        # Asignar usuario creador (ahora es ForeignKey, no string)
+        # create() sobrescrito; no se usa perform_create para subida con archivo
         serializer.save(usuario_creador=self.request.user)
 
 

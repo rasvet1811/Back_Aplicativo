@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,12 +21,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-f=acf+-a$5(n#ec(hcqjrcz5*pi^rrd%e4%lh1p2m)s6*prm8o'
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-f=acf+-a$5(n#ec(hcqjrcz5*pi^rrd%e4%lh1p2m)s6*prm8o'
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('1', 'true', 'yes')
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']  # En producción, especifica tu dominio
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,*').split(',')
 
 
 # Application definition
@@ -80,9 +84,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
       'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'RRHH',
+        'NAME': 'tablas',
         'USER': 'postgres',
-        'PASSWORD': 'postgres123',
+        'PASSWORD': '123456789',
         'HOST': 'localhost',
         'PORT': '5432',
     }
@@ -193,20 +197,27 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-# Media Files Configuration
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+# Media Files Configuration (archivos públicos servidos por URL; documentos NO van aquí)
+MEDIA_URL = os.environ.get('DJANGO_MEDIA_URL', '/media/')
+MEDIA_ROOT = os.environ.get('DJANGO_MEDIA_ROOT', str(BASE_DIR / 'media'))
 
-# Token Expiration (30 minutos)
-TOKEN_EXPIRATION_MINUTES = 30
+# Documentos: ruta privada, no expuesta por URL. Solo acceso vía vista protegida.
+DOCUMENT_STORAGE_ROOT = os.environ.get(
+    'DOCUMENT_STORAGE_ROOT',
+    str(BASE_DIR / 'documentos_privados')
+)
+
+# Token Expiration (minutos)
+TOKEN_EXPIRATION_MINUTES = int(os.environ.get('TOKEN_EXPIRATION_MINUTES', '30'))
 
 # Email Configuration
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Para desarrollo - imprime emails en consola
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # Para producción
-
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'tu-email@gmail.com'
-EMAIL_HOST_PASSWORD = 'tu-contraseña-app'
-DEFAULT_FROM_EMAIL = 'tu-email@gmail.com'
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend'
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('1', 'true', 'yes')
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@localhost')

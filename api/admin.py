@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import (
     Rol, User, Empleado, Caso, Alerta, Documento, Carpeta,
-    Seguimiento, Reporte, CasoReporte, TokenVerification, ExpiringToken
+    Seguimiento, Reporte, CasoReporte, TokenVerification, ExpiringToken,
+    AuditoriaDocumento,
 )
 
 
@@ -91,10 +92,18 @@ class CarpetaAdmin(admin.ModelAdmin):
 
 @admin.register(Documento)
 class DocumentoAdmin(admin.ModelAdmin):
-    list_display = ['nombre', 'caso', 'tipo', 'usuario_creador', 'empleado', 'carpeta', 'fecha_carga', 'extension']
-    list_filter = ['tipo', 'fecha_carga', 'extension', 'carpeta']
+    list_display = ['nombre', 'caso', 'tipo', 'nivel_sensibilidad', 'usuario_creador', 'empleado', 'carpeta', 'fecha_carga', 'extension']
+    list_filter = ['tipo', 'nivel_sensibilidad', 'fecha_carga', 'extension', 'carpeta']
     search_fields = ['nombre', 'descripcion', 'caso__empleado__nombre', 'usuario_creador__nombre', 'empleado__nombre']
-    readonly_fields = ['fecha_carga', 'fecha_modificacion']
+    readonly_fields = ['fecha_carga', 'fecha_modificacion', 'ruta', 'tamano_bytes', 'checksum_sha256']
+
+
+@admin.register(AuditoriaDocumento)
+class AuditoriaDocumentoAdmin(admin.ModelAdmin):
+    list_display = ['id_auditoria', 'documento', 'usuario', 'accion', 'fecha', 'ip_origen']
+    list_filter = ['accion', 'fecha']
+    search_fields = ['usuario__username', 'documento__nombre']
+    readonly_fields = ['fecha']
 
 
 @admin.register(Seguimiento)

@@ -220,7 +220,12 @@ class Carpeta(models.Model):
 
 
 class Documento(models.Model):
-    """Documentos asociados a casos - Mapea a tabla Documento"""
+    """Documentos asociados a casos - Mapea a tabla Documento. Sin archivo binario en BD."""
+    NIVEL_SENSIBILIDAD_CHOICES = [
+        ('PUBLICO', 'Público'),
+        ('CONFIDENCIAL', 'Confidencial'),
+        ('RESTRINGIDO', 'Restringido'),
+    ]
     id_documento = models.AutoField(primary_key=True, db_column='Id_Documento')
     caso = models.ForeignKey(Caso, on_delete=models.CASCADE, blank=True, null=True, db_column='Id_Caso', related_name='documentos')
     nombre = models.CharField(max_length=150, blank=True, null=True, db_column='Nombre')
@@ -231,9 +236,14 @@ class Documento(models.Model):
     empleado = models.ForeignKey(Empleado, on_delete=models.SET_NULL, blank=True, null=True, db_column='Id_Empleado', related_name='documentos')
     carpeta = models.ForeignKey('Carpeta', on_delete=models.SET_NULL, blank=True, null=True, db_column='Id_Carpeta', related_name='documentos')
     descripcion = models.TextField(blank=True, null=True, db_column='Descripcion')
-    ruta = models.TextField(blank=True, null=True, db_column='Ruta')  # Ruta del archivo
+    ruta = models.TextField(blank=True, null=True, db_column='Ruta')  # Ruta relativa (nombre UUID.ext), archivo en disco privado
     extension = models.CharField(max_length=20, blank=True, null=True, db_column='Extension')
-    archivo = models.FileField(upload_to='documentos/', blank=True, null=True)  # Campo adicional para FileField
+    nivel_sensibilidad = models.CharField(
+        max_length=20, db_column='Nivel_Sensibilidad', default='CONFIDENCIAL',
+        choices=NIVEL_SENSIBILIDAD_CHOICES
+    )
+    tamano_bytes = models.BigIntegerField(blank=True, null=True, db_column='Tamano_Bytes')
+    checksum_sha256 = models.CharField(max_length=64, blank=True, null=True, db_column='Checksum_SHA256')
     
     class Meta:
         db_table = 'Documento'
@@ -242,15 +252,35 @@ class Documento(models.Model):
         ordering = ['-fecha_carga']
     
     def __str__(self):
-        return f"{self.nombre} - {self.caso}"
+        return f"{self.nombre or self.ruta} - {self.caso}"
     
     def save(self, *args, **kwargs):
-        # Si hay archivo, actualizar ruta y extensión
-        if self.archivo:
-            self.ruta = self.archivo.name
-            if '.' in self.archivo.name:
-                self.extension = self.archivo.name.split('.')[-1].lower()
+        # No se guarda archivo binario; ruta/extension/tamano/checksum se asignan en el servicio de subida
         super().save(*args, **kwargs)
+
+
+class AuditoriaDocumento(models.Model):
+    """Auditoría de acciones sobre documentos - Mapea a tabla Auditoria_Documento"""
+    ACCION_CHOICES = [
+        ('SUBIDA', 'Subida'),
+        ('DESCARGA', 'Descarga'),
+        ('ELIMINADO', 'Eliminado'),
+    ]
+    id_auditoria = models.AutoField(primary_key=True, db_column='Id_Auditoria')
+    documento = models.ForeignKey(Documento, on_delete=models.CASCADE, db_column='Id_Documento', related_name='auditorias')
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, db_column='Id_Usuario', related_name='auditorias_documento')
+    accion = models.CharField(max_length=20, db_column='Accion', choices=ACCION_CHOICES)
+    fecha = models.DateTimeField(auto_now_add=True, db_column='Fecha')
+    ip_origen = models.GenericIPAddressField(blank=True, null=True, db_column='Ip_Origen')
+    
+    class Meta:
+        db_table = 'Auditoria_Documento'
+        verbose_name = 'Auditoría de documento'
+        verbose_name_plural = 'Auditorías de documentos'
+        ordering = ['-fecha']
+    
+    def __str__(self):
+        return f"{self.accion} - Doc #{self.documento_id} - {self.fecha}"
 
 
 class Seguimiento(models.Model):
